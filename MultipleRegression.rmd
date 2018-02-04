@@ -1,0 +1,214 @@
+---
+title: "Motor Trend Multiple Regression"
+author: "JeremiShane"
+date: "1/31/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(plyr)
+library(dplyr)
+library(datasets)
+library(fmsb)
+library(corrplot)
+library(ggplot2)
+library(gridExtra)
+data(mtcars)
+```
+
+```{r transform, include=FALSE, echo=FALSE}
+df <- mtcars  ## data frame for log transforms
+df$mpg <- log(df$mpg)
+df$cyl <- log(df$cyl)
+df$disp <- log(df$disp)
+df$hp <- log(df$hp)
+df$drat <- log(df$drat)
+df$wt <- log(df$wt)
+df$qsec <- log(df$qsec)
+df$gear <- log(df$gear)
+df$carb <- log(df$carb)
+```  
+
+# Executive Summary
+The following analysis explores the relationship between a set of variables and miles per gallon (MPG) in the Motor Trend Cars (mtcars) dataset.  The focus of this analysis
+is to answer the following:  
+
+        1. Is an automatic or manual transmission better for MPG?   
+        2. Quantify the MPG difference between automatic and manual transmissions    
+  
+From this analysis we do see a significant difference in mpg between automatic and manual transmissions.
+
+Modeling indicates there could be ~ 5.27 mpg improvement with manual transmission, but in the same model mpg will be reduced by the same for an approximate increase in horsepower by ~90 hp.
+
+Based on the data and analysis we can't draw strong conclusions.  We need more data, and possibly more variables to come to more confident conclusions.  
+
+### This boxplot demonstrates the difference in automatic(0) vs. manual(1)
+```{r box}
+boxplot(mtcars$mpg ~ mtcars$am, data = mtcars, outpch = 19, ylab="mpg:miles per 
+gallon",xlab="auomtatic = 0, manual = 1",main="Boxplot - mpg vs transmission type", col="blue") 
+```     
+
+### The following t-test further proves the mpg difference in transmission types  
+
+```{r vs}
+## hypothesis t-test
+t.test(mtcars$mpg~mtcars$am,conf.level=0.95)
+```  
+Here we reject the null hypothesis that the means are the same.  Let's further explore and work towards regression analysis to better understand the other factors that impact mpg, and also to help quantify the impact of transmission type.  
+
+# Regression Analysis  
+
+## Distribution of mpg     
+mpg and especially log(mpg) appear to be normally distributed.  In addition to mtcars dataset, another dataframe df contains the log transforms of all the variables.    
+
+```{r dist}
+
+## density distributions of mpg and log(mpg)
+plot1 <- ggplot(data = mtcars, aes(x=mtcars$mpg)) +
+        geom_density(fill="blue", alpha=.23) + 
+        labs(x="mpg", y="probability density", title="density distribution") +
+        geom_vline(aes(xintercept=mean(mtcars$mpg)), col="red", lwd=1.5)
+plot2 <- ggplot(data = mtcars, aes(x=log(mtcars$mpg))) +
+        geom_density(fill="blue", alpha=.23) + 
+        labs(x="log(mpg)", y="probability density", title="density distribution") +
+        geom_vline(aes(xintercept=mean(log(mtcars$mpg))), col="red", lwd=1.5)
+grid.arrange(plot1, plot2, ncol=2)  
+
+```   
+
+### Correlation between Variables
+```{r corr}
+## pearson correlations for numeric variables
+cor <- cor(mtcars, use="pairwise", method="pearson")
+## graphical display of correlations
+corrplot(cor, mar=c(0,0,3,0))
+title(main="Pearson Correlation") 
+## more on correlation in the Appendix
+```  
+These correlations indicate a possible need to reduce the variable selection for regression analysis.
+
+## Variable Selection  
+Two methods were used to influence variable selection (See Appendix for details), keep in mind that our focus is on the impact of transmission(am) to mpg so we will aim to keep am as a regressor. 
+
+        1.  Principal Components Analysis on the log transforms
+        2.  Stepwise automated regression and selection of regressors  
+
+Note - the residuals vs. leverage plots all indicate the possibility of outliers that could impact the model.  For this anlysis we won't remove the identified outliers at this time.   
+
+# Models   
+When looking at the impact of transmission type alone we see evidence again that manual transmission has a positive influence on mpg.  However, with the model only considering "am" as a regressor we have a very low R Squared indicating there is a high (~70%) likelihood of obtaining values outside of the observed.  
+
+We get a much improved R Squared value when we add "hp" as a regressor with "am", and we start to see the influence other variables have on mpg, and a more complete understanding of mpg.  
+
+```{r glm}
+## model only with "am"
+fit <- lm(mpg ~ am, df)
+summary(fit)
+
+## this is the model I choose to trust most from this analysis, but still have limited confidence in the findings.  
+fit <- glm(mpg ~ am + hp, mtcars, family = "gaussian")
+summary(fit)
+shapiro.test(fit$residuals) ## the null hypotheisis is normality of the residuals
+VIF(fit) ## less than 10 
+plot(fit)
+
+model <- glm(mpg~ factor(am):wt + factor(am):qsec,data=mtcars, family = "gaussian")
+summary(model)  
+```  
+This last model is the strongest produced with strong p values for the regressors, very significant difference between residual deviance and null deviance indicating that this model with the regressors selected is significant.  The lm() with same regressors in the appendix produces an Adjusted R Squared of 0.879.
+
+However, this model could be strong based on a bias in our data which could be the result of a small/limited dataset.  I draw this conclusion based on the clear visual of the mpg distributions for am=0 vs. am=1.  The charts below also help to support this conclusion.  Primarily, I believe we would need a more equal distribution of cars with manual transmissions in higher wt ranges and automatic transmission cars in lower wt ranges in order for the last model to be trusted.  
+
+```{r supportcharts}
+## indicates that as wt increases mpg decreases
+plot(df$mpg, df$wt)
+abline(lm(mpg ~ wt, data=df), col="red")
+
+## indicates that the manual transmission cars in our dataset are of lower wt values, and that higher wt cars have automatic transmissions.
+plot(df$wt, df$am)
+abline(lm(wt ~ am, data=df), col="red")
+```
+
+# Appendix   
+  
+## Data Overview  
+
+A data frame with 32 observations on 11 variables.
+
+        [, 1]	mpg	Miles/(US) gallon
+        [, 2]	cyl	Number of cylinders
+        [, 3]	disp	Displacement (cu.in.)
+        [, 4]	hp	Gross horsepower
+        [, 5]	drat	Rear axle ratio
+        [, 6]	wt	Weight (1000 lbs)
+        [, 7]	qsec	1/4 mile time
+        [, 8]	vs	V/S
+        [, 9]	am	Transmission (0 = automatic, 1 = manual)
+        [,10]	gear	Number of forward gears
+        [,11]	carb	Number of carburetors
+
+```{r appdata}
+## str(mtcars)
+summary(mtcars)
+## mtcars$am <- as.factor(mtcars$am)
+## levels(mtcars$am) <-c("Automatic", "Manual")
+```  
+  
+## Multiple Regression  
+```{r multireg}
+## regression with all variables not a good model
+fit <- glm(mpg ~ ., mtcars, family="gaussian")
+summary(fit)
+
+## stepwise automated model selection
+## first with our mtcars dataset
+stepmodel = step(lm(data = mtcars, mpg ~ .),trace=0,steps=10000)
+summary(stepmodel)
+
+## now with our df dataset containing the log transform.  
+stepmodel = step(lm(data = df, mpg ~ .),trace=0,steps=10000)
+summary(stepmodel)
+## does not select our variable of interest [am]
+
+## based on the principal components analysis
+## the most trusted model
+fit <- lm(mpg ~ am + hp, df)
+summary(fit)
+shapiro.test(fit$residuals) ## the null hypotheisis is normality of the residuals
+## VIF(fit) ## less than 10 
+## plot(fit)
+## influence.measures(fit)
+
+## modified from stepwise model
+model <- lm(mpg~ factor(am):wt + factor(am):qsec,data=mtcars)
+summary(model)
+plot(model)
+shapiro.test(model$residuals)
+influence.measures(model)
+
+```   
+
+## Correlations And Variable Selection
+```{r appendix}
+## pairs
+pairs(mtcars)
+
+## print correlations
+print(cor)
+
+```  
+
+### Principal Components Analysis of Log Transform Independent Variables  
+Analysis of the principal components shows log(hp) may be a good regressor to include along with am for regression analysis of mpg.  This is based on orthoginal vectors that can be clearly seen below. 
+
+```{r prcomp}
+dfi <- df[,2:10] ## data frame of log independent variables
+pc <- prcomp(dfi, scale=TRUE, center=TRUE, tol=0)
+dfi2 <- df[, c(4,9)]
+pc2 <- prcomp(dfi2, scale=TRUE, center=TRUE, tol=0)
+par(mfrow = c(1,2))
+biplot(pc, main="PCA All")
+biplot(pc2, main="PCA [am] and [hp]")
+```  
+  
